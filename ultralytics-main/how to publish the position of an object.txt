@@ -1,0 +1,22 @@
+open the directory of ZHXY/sh
+./launch_base.sh 
+
+
+
+cd /home/nvidia/test/install 
+source setup.bash 
+roslaunch mobiman mmp_jointTrackerdemo.launch
+
+conda activate yolov88
+
+# run this following command in the terminal, this will publish the position of objectreative to the base_link in 3D space.
+
+python object_apple.py
+
+
+
+#if you want the gripper to move towards the apple you should run this code
+source ~/test/install/setup.bash
+roslaunch mobiman SampleA_right_arm_relaxed_ik_mit.launch
+
+python object_move2.py

@@ -1,0 +1,65 @@
+Scenario 1: Kitchen Task
+
+"Please hand me the salt from the counter."
+
+"Can you move the cup to the table?"
+
+"Open the fridge door and grab the milk."
+
+"Place the bread on the cutting board."
+
+"Pick up the knife from the counter."
+
+Scenario 2: Living Room Interaction
+
+"Turn on the TV and change the channel to Netflix."
+
+"Can you bring me the remote control from the coffee table?"
+
+"Close the curtains in the living room."
+
+"Adjust the thermostat to 22 degrees."
+
+"Pick up the magazine from the sofa."
+
+Scenario 3: Bedroom Task
+
+"Make the bed and fluff the pillows."
+
+"Turn on the bedside lamp."
+
+"Place the dirty clothes in the laundry basket."
+
+"Close the bedroom door."
+
+"Fetch my glasses from the nightstand."
+
+Scenario 4: Cleaning Task
+
+"Vacuum the living room rug."
+
+"Mop the kitchen floor."
+
+"Pick up the trash and throw it away."
+
+"Wipe down the kitchen counter."
+
+"Dust the bookshelves in the hallway."
+
+  import pkg_resources
+加载 Whisper 模型中...
+✓ 模型加载完成！
+✓ 找到麦克风: 麦克风 (Newmine) (index=1)
+🎤 麦克风采样率: 44100 Hz
+开始实时语音识别...
+
+识别: place the dirty clothes in the laundry basket.
+识别: Pick up the trash and throw it away.
+识别: Wipe down the kitchen counter.
+识别: Fetch my glasses for more than that's done.
+识别: Make the bed and floor for the pillows.
+识别: Turn on the TV and change the channel to Netflix.
+识别: Open the fridge door and grab the milk.
+识别: Please hand me the sword from the counter.
+识别已停止
+录音已保存为 recorded_audio.wav

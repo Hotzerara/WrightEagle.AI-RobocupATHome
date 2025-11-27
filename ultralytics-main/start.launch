@@ -1,0 +1,52 @@
+<launch>
+    <!-- 
+      This is the main launch file to bring up the entire robot system.
+      
+      IMPORTANT: Before running this file, you must first:
+      1. Manually set up the CAN bus with the required `sudo` commands.
+      2. Source ALL required workspaces in the correct order in your terminal.
+         (See instructions for the required command sequence).
+    -->
+
+    <!-- ================================================================== -->
+    <!-- Part 1: Base Control from '/home/nvidia/test/install' workspace    -->
+    <!-- ================================================================== -->
+    <include file="$(find HDAS)/launch/r1.launch" />
+    <include file="$(find mobiman)/launch/r1_chassis_control.launch" />
+
+
+    <!-- ================================================================== -->
+    <!-- Part 2: Localization from 'localizaion_ws' workspace             -->
+    <!-- ================================================================== -->
+    <!-- Livox LiDAR Driver -->
+    <include file="$(find livox_ros_driver2)/launch/rviz_MID360.launch">
+        <arg name="rviz_enable" value="False"/>
+    </include>
+
+    <!-- Localization Node -->
+    <include file="$(find jh_localization)/launch/localization_realtime.launch">
+        <arg name="ws_path"   value="/home/nvidia/ws_path/3HL119"/>
+        <arg name="topic"     value="/livox/lidar"/>
+        <arg name="imu_topic" value="//"/>
+    </include>
+
+
+    <!-- ================================================================== -->
+    <!-- Part 3: Navigation from 'catkin_songcan' workspace               -->
+    <!-- ================================================================== -->
+    <!-- TF Publisher for Odom -> Base Link -->
+    <include file="$(find odom_baselink_rslidar_tf)/launch/odom_baselink_rslidar_tf.launch" />
+
+    <!-- PointCloud to LaserScan Converter -->
+    <include file="$(find pointcloud_to_laserscan)/launch/pointcloud_to_laserscan.launch" />
+
+    <!-- Navigation Stack (move_base with DWA planner) -->
+    <include file="$(find nav_launch)/launch/tracer_mini_dwa.launch" />
+    
+    
+    <!-- ================================================================== -->
+    <!-- Part 4: Demo from 'galaxea/install' workspace                    -->
+    <!-- ================================================================== -->
+    <include file="$(find mobiman)/launch/mmp_jointTrackerdemo.launch" />
+
+</launch>

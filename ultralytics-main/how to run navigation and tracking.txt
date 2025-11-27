@@ -1,0 +1,67 @@
+#find ~/ZHXY , then go to sh , first ./launch_base.sh, ./launch_localization.sh, ./launch_navigation.sh
+
+# 1. 先关闭接口
+sudo ip link set can0 down
+
+# 2. 设置CAN参数 (比特率、CAN-FD模式等)
+sudo ip link set dev can0 type can bitrate 1000000 dbitrate 5000000 fd on
+
+# 3. 重新激活接口，这是最关键的一步
+sudo ip link set can0 up
+
+
+cd /home/nvidia/test/install && source setup.bash && \
+roslaunch HDAS r1.launch
+#after that you need to open a new terminal
+
+cd /home/nvidia/test/install && source setup.bash && \
+roslaunch mobiman r1_chassis_control.launch
+#after that you need to open a new terminal
+
+
+
+
+source /home/nvidia/workdir/localizaion_ws/devel/setup.bash && \
+     roslaunch livox_ros_driver2 rviz_MID360.launch rviz_enable:=False                
+#after that you need to open a new terminal
+
+source /home/nvidia/workdir/localizaion_ws/devel/setup.bash && \
+     roslaunch jh_localization localization_realtime.launch  ws_path:=/home/nvidia/ws_path/3HL119   topic:=/livox/lidar   imu_topic:=//
+#after that you need to open a new terminal
+
+
+
+
+
+source /home/nvidia/workdir/jili/catkin_songcan/devel/setup.bash && \
+     roslaunch odom_baselink_rslidar_tf odom_baselink_rslidar_tf.launch
+#after that you need to open a new terminal
+
+source /home/nvidia/workdir/jili/catkin_songcan/devel/setup.bash && \
+     roslaunch pointcloud_to_laserscan pointcloud_to_laserscan.launch
+#after that you need to open a new terminal
+
+source /home/nvidia/workdir/jili/catkin_songcan/devel/setup.bash && \
+     roslaunch nav_launch tracer_mini_dwa.launch
+#after that you need to open a new terminal
+
+
+#give it a initial vector by hand
+
+
+
+source ~/work/galaxea/install/setup.bash
+roslaunch mobiman mmp_jointTrackerdemo.launch 
+#after that you need to open a new terminal
+
+
+#identity the person in camera
+#please run in vscode 
+
+conda activate yolov88
+LD_PRELOAD=/home/nvidia/miniconda3/lib/libgomp.so.1 python start_tracking_base_modify.py
+
+
+#follow the person
+alias python='python3'
+python person_follower.py

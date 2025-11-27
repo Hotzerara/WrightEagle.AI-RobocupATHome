@@ -1,0 +1,13 @@
+digraph G {
+"base_link_fusion" -> "base_link"[label="Broadcaster: /base_link_to_fusion_broadcaster\nAverage rate: 10000.000 Hz\nMost recent transform: 0.000 ( 1763462315.289 sec old)\nBuffer length: 0.000 sec\n"];
+"livox_frame" -> "base_link_fusion"[label="Broadcaster: /rslidar_baselink_broadcaster\nAverage rate: 10000.000 Hz\nMost recent transform: 0.000 ( 1763462315.289 sec old)\nBuffer length: 0.000 sec\n"];
+"map" -> "odom_fusion"[label="Broadcaster: /map_odom_broadcaster\nAverage rate: 10000.000 Hz\nMost recent transform: 0.000 ( 1763462315.289 sec old)\nBuffer length: 0.000 sec\n"];
+edge [style=invis];
+ subgraph cluster_legend { style=bold; color=black; label ="view_frames Result";
+"Recorded at time: 1763462315.289"[ shape=plaintext ] ;
+ }->"livox_frame";
+edge [style=invis];
+ subgraph cluster_legend { style=bold; color=black; label ="view_frames Result";
+"Recorded at time: 1763462315.289"[ shape=plaintext ] ;
+ }->"map";
+}

@@ -1,0 +1,326 @@
+#!/usr/bin/env python3
+import time
+import math
+import numpy as np
+import cv2
+import pyrealsense2 as rs
+from ultralytics import YOLO
+import open3d as o3d
+
+import rospy
+import tf2_ros
+from geometry_msgs.msg import PoseStamped, Point, Quaternion
+from std_msgs.msg import Header
+from tf.transformations import quaternion_from_euler
+
+# ---------------- RealSense 初始化 ----------------
+def initialize_realsense():
+    pipeline = rs.pipeline()
+    config = rs.config()
+    config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+    config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+    try:
+        profile = pipeline.start(config)
+    except RuntimeError as e:
+        rospy.logwarn(f"RealSense start failed, retrying fallback streams: {e}")
+        config.disable_all_streams()
+        config.enable_stream(rs.stream.color)
+        config.enable_stream(rs.stream.depth)
+        profile = pipeline.start(config)
+
+    depth_sensor = profile.get_device().first_depth_sensor()
+    depth_scale = depth_sensor.get_depth_scale()
+    align_to = rs.stream.color
+    align = rs.align(align_to)
+    color_profile = rs.video_stream_profile(profile.get_stream(rs.stream.color))
+    intrinsics = color_profile.get_intrinsics()
+    return pipeline, align, depth_scale, intrinsics
+
+# ---------------- 深度处理 ----------------
+def get_median_depth_in_roi(depth_frame, depth_scale, x1, y1, x2, y2):
+    width, height = depth_frame.get_width(), depth_frame.get_height()
+    x1, y1 = max(0, int(x1)), max(0, int(y1))
+    x2, y2 = min(width-1, int(x2)), min(height-1, int(y2))
+    if x2 <= x1 or y2 <= y1:
+        return None
+    depth_data = np.asanyarray(depth_frame.get_data())
+    roi = depth_data[y1:y2, x1:x2]
+    roi_m = roi.astype(float) * depth_scale
+    valid = roi_m[(roi_m > 0.05) & (roi_m < 10.0)]
+    if valid.size == 0:
+        return None
+    return float(np.median(valid))
+
+def get_3d_coordinates_from_pixel(depth_frame, depth_scale, intrinsics, px, py, depth_override=None):
+    # px,py should be ints
+    if px < 0 or py < 0 or px >= intrinsics.width or py >= intrinsics.height:
+        return None
+    try:
+        if depth_override is None:
+            depth = depth_frame.get_distance(int(px), int(py))
+        else:
+            depth = float(depth_override)
+        if depth <= 0:
+            return None
+        pt = rs.rs2_deproject_pixel_to_point(intrinsics, [int(px), int(py)], depth)
+        return np.array(pt, dtype=float)  # [x,y,z] in meters in camera frame
+    except RuntimeError:
+        return None
+
+# ---------------- 2D 关键点 -> 中心 ----------------
+def get_body_center_from_keypoints(kpts):
+    # kpts: list of (x,y,conf) with indices per COCO-ish order used by the model
+    # Shoulder/hip indices tuned to common pose models (may adjust)
+    L_SHO, R_SHO, L_HIP, R_HIP = 5, 6, 11, 12
+    valid_points = []
+    try:
+        if kpts[L_SHO][2] > 0.15 and kpts[R_SHO][2] > 0.15:
+            mx = (kpts[L_SHO][0] + kpts[R_SHO][0]) / 2
+            my = (kpts[L_SHO][1] + kpts[R_SHO][1]) / 2
+            valid_points.append((mx, my))
+        if kpts[L_HIP][2] > 0.15 and kpts[R_HIP][2] > 0.15:
+            mx = (kpts[L_HIP][0] + kpts[R_HIP][0]) / 2
+            my = (kpts[L_HIP][1] + kpts[R_HIP][1]) / 2
+            valid_points.append((mx, my))
+    except Exception:
+        pass
+
+    if len(valid_points) == 0:
+        return None
+    cx, cy = np.mean(valid_points, axis=0)
+    return int(cx), int(cy)
+
+# ---------------- TF: 将摄像头坐标系点变换到 base_link ----------------
+def transform_point_camera_to_base(tf_buffer, point_camera, camera_frame_id):
+    """
+    point_camera: np.array([x,y,z]) in camera frame (meters)
+    camera_frame_id: string, e.g. 'camera_color_frame' or 'camera_link'
+    """
+    if point_camera is None:
+        return None
+    try:
+        # lookup transform base_link <- camera_frame
+        trans = tf_buffer.lookup_transform('base_link', camera_frame_id, rospy.Time(0), rospy.Duration(1.0))
+        t = np.array([trans.transform.translation.x,
+                      trans.transform.translation.y,
+                      trans.transform.translation.z])
+        q = trans.transform.rotation
+        # build transformation matrix
+        # quaternion to rotation matrix
+        from tf.transformations import quaternion_matrix
+        quat = [q.x, q.y, q.z, q.w]
+        rot4 = quaternion_matrix(quat)  # 4x4
+        T = np.eye(4)
+        T[:3, :3] = rot4[:3, :3]
+        T[:3, 3] = t
+        pt_h = np.array([point_camera[0], point_camera[1], point_camera[2], 1.0])
+        pt_base = T @ pt_h
+        return pt_base[:3]
+    except Exception as e:
+        rospy.logwarn_once(f"TF lookup failed for camera frame '{camera_frame_id}': {e}")
+        return None
+
+# ---------------- 朝向估计（可选） ----------------
+def estimate_yaw_from_shoulders_3d(left3d, right3d):
+    """
+    Use left-right shoulder vector (pointing from right->left) to estimate body yaw.
+    We take perpendicular on horizontal plane as approximate forward vector and compute yaw.
+    """
+    if left3d is None or right3d is None:
+        return None
+    vec = left3d - right3d  # left minus right -> lateral vector in camera frame
+    # project to horizontal (x,z) plane depending on camera frame convention
+    # assume camera frame: x right, y down, z forward (RealSense typical: x right, y down, z forward)
+    # forward_approx = perpendicular in x-z plane -> (-vec[2], vec[0])
+    fx = -vec[2]
+    fz = vec[0]
+    yaw = math.atan2(fz, fx)  # angle around y axis
+    return yaw
+
+# ---------------- 主程序 ----------------
+def main():
+    rospy.init_node('person_tracker', anonymous=True)
+    pub = rospy.Publisher('/person/base_link_pose', PoseStamped, queue_size=10)
+
+    pipeline, align, depth_scale, intrinsics = initialize_realsense()
+    model = YOLO('yolov8n-pose.pt')  # 确保权重存在
+
+    # TF buffer / listener（在外面初始化并复用）
+    tf_buffer = tf2_ros.Buffer()
+    tf_listener = tf2_ros.TransformListener(tf_buffer)
+
+    # 摄像头 frame 名称尝试列表（在不同 launch 下名字可能不同）
+    candidate_camera_frames = [
+        'camera_color_frame', 'camera_link', 'camera_rgb_frame',
+        'color_frame', 'camera_depth_frame', 'camera_frame'
+    ]
+
+    cv2.namedWindow('Person Detection', cv2.WINDOW_NORMAL)
+    rospy.loginfo("开始人员检测 (按 'q' 退出)...")
+
+    # 可视化点云（可选）
+    vis = o3d.visualization.Visualizer()
+    vis.create_window(window_name='3D Point Cloud', width=640, height=480)
+    pcd = o3d.geometry.PointCloud()
+    vis.add_geometry(pcd)
+    vis.add_geometry(o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3))
+
+    try:
+        while not rospy.is_shutdown():
+            frames = pipeline.wait_for_frames()
+            aligned = align.process(frames)
+            color_frame = aligned.get_color_frame()
+            depth_frame = aligned.get_depth_frame()
+            if not color_frame or not depth_frame:
+                continue
+
+            color_image = np.asanyarray(color_frame.get_data())
+            depth_image = np.asanyarray(depth_frame.get_data())
+
+            # YOLO pose inference
+            results = model(color_image)
+
+            display = color_image.copy()
+            depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.03), cv2.COLORMAP_JET)
+
+            for result in results:
+                if result.keypoints is None:
+                    continue
+                boxes = result.boxes
+                keypoints = result.keypoints
+
+                for i, box in enumerate(boxes):
+                    # 只处理类别为 person 的检测，cls 可能为 tensor
+                    try:
+                        cls_id = int(box.cls[0])
+                    except Exception:
+                        cls_id = int(box.cls) if hasattr(box, 'cls') else 0
+                    if cls_id != 0:
+                        continue
+
+                    # bbox
+                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
+                    # keypoints
+                    kpts = keypoints.xy[i].cpu().numpy()
+                    confs = keypoints.conf[i].cpu().numpy()
+                    key_data = [(kpts[j][0], kpts[j][1], confs[j]) for j in range(len(kpts))]
+
+                    # 先用关键点计算更准确的中心
+                    center = get_body_center_from_keypoints(key_data)
+                    if center is None:
+                        cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+                    else:
+                        cx, cy = center
+
+                    # 取 bbox 或局部 ROI 的中值深度
+                    median_depth = get_median_depth_in_roi(depth_frame, depth_scale, x1, y1, x2, y2)
+                    # 如果没有深度用像素点深度尝试
+                    point_cam = None
+                    if median_depth is not None:
+                        point_cam = get_3d_coordinates_from_pixel(depth_frame, depth_scale, intrinsics, cx, cy, median_depth)
+                    else:
+                        point_cam = get_3d_coordinates_from_pixel(depth_frame, depth_scale, intrinsics, cx, cy, None)
+
+                    if point_cam is None:
+                        # 无有效深度，跳过
+                        continue
+
+                    # 在图像上画 bbox 和位置
+                    cv2.rectangle(display, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.circle(display, (int(cx), int(cy)), 4, (0, 0, 255), -1)
+                    cv2.putText(display, f"cam: ({point_cam[0]:.2f},{point_cam[1]:.2f},{point_cam[2]:.2f})m",
+                                (x1, max(15, y1-8)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
+
+                    # 找到合适的 camera_frame 名称（缓存失败限制）
+                    transformed = None
+                    used_frame = None
+                    for cam_frame in candidate_camera_frames:
+                        transformed = transform_point_camera_to_base(tf_buffer, point_cam, cam_frame)
+                        if transformed is not None:
+                            used_frame = cam_frame
+                            break
+
+                    if transformed is None:
+                        # 如果所有尝试均失败，尝试直接使用 RealSense 内置 frame 名称（从 frame metadata）
+                        try:
+                            rs_frame_name = color_frame.get_profile().stream_name  # 例如 "Color"
+                            # 可能该名字不是 TF 名称，但做尝试
+                            transformed = transform_point_camera_to_base(tf_buffer, point_cam, rs_frame_name)
+                            used_frame = rs_frame_name
+                        except Exception:
+                            pass
+
+                    if transformed is None:
+                        rospy.logwarn_throttle(5.0, "无法将摄像头坐标转换到 base_link（没有合适的 TF）。请检查 TF tree 与 frame 名称。")
+                        continue
+
+                    # 估计方向（可选）：若左右肩的 3D 都可用则计算朝向 yaw
+                    yaw = None
+                    try:
+                        # 尝试从关键点获得左右肩 3D 点（如果置信度高）
+                        L_SHO_i, R_SHO_i = 5, 6
+                        left3d = None
+                        right3d = None
+                        if confs[L_SHO_i] > 0.15:
+                            lx, ly = int(kpts[L_SHO_i][0]), int(kpts[L_SHO_i][1])
+                            ldepth = get_median_depth_in_roi(depth_frame, depth_scale, lx-2, ly-2, lx+2, ly+2)
+                            left3d = get_3d_coordinates_from_pixel(depth_frame, depth_scale, intrinsics, lx, ly, ldepth)
+                        if confs[R_SHO_i] > 0.15:
+                            rx, ry = int(kpts[R_SHO_i][0]), int(kpts[R_SHO_i][1])
+                            rdepth = get_median_depth_in_roi(depth_frame, depth_scale, rx-2, ry-2, rx+2, ry+2)
+                            right3d = get_3d_coordinates_from_pixel(depth_frame, depth_scale, intrinsics, rx, ry, rdepth)
+                        if left3d is not None and right3d is not None:
+                            # 把左右肩也变换到 base_link，并计算 yaw（在 base_link 平面上）
+                            left_base = transform_point_camera_to_base(tf_buffer, left3d, used_frame)
+                            right_base = transform_point_camera_to_base(tf_buffer, right3d, used_frame)
+                            if left_base is not None and right_base is not None:
+                                # lateral vector in base frame
+                                lateral = left_base - right_base
+                                # approximate forward in base frame as perpendicular on X-Z plane
+                                fx = -lateral[2]
+                                fz = lateral[0]
+                                yaw = math.atan2(fz, fx)
+                    except Exception as e:
+                        rospy.logwarn_once(f"Orientation estimation failed: {e}")
+
+                    # 构建 PoseStamped（位置信息 + 四元数）
+                    pose_msg = PoseStamped()
+                    pose_msg.header.stamp = rospy.Time.now()
+                    pose_msg.header.frame_id = 'base_link'  # 我们将点转换到 base_link
+                    px, py, pz = float(transformed[0]), float(transformed[1]), float(transformed[2])
+
+                    pose_msg.pose.position = Point(px, py, pz)
+                    if yaw is None:
+                        # 默认无旋转（单位四元数）
+                        q = [0.0, 0.0, 0.0, 1.0]
+                    else:
+                        q = quaternion_from_euler(0.0, 0.0, yaw)  # roll, pitch, yaw
+                    pose_msg.pose.orientation = Quaternion(*q)
+
+                    # 发布
+                    pub.publish(pose_msg)
+                    # 在显示上写出 base_link 坐标
+                    cv2.putText(display, f"base: ({px:.2f},{py:.2f},{pz:.2f})m",
+                                (x1, max(35, y1-24)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
+
+            # 显示
+            cv2.imshow("Person Detection", display)
+            cv2.imshow("Depth", depth_colormap)
+
+            vis.poll_events()
+            vis.update_renderer()
+
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+    finally:
+        pipeline.stop()
+        cv2.destroyAllWindows()
+        try:
+            vis.destroy_window()
+        except Exception:
+            pass
+        rospy.loginfo("程序已退出")
+
+if __name__ == "__main__":
+    main()
