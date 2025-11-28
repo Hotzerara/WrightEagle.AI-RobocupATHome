@@ -1,0 +1,24 @@
+
+<launch>
+
+    <arg name="ws_path" default="/home/sonic/perception_driver_ws/jili_ws" />
+
+    <param name="ws_path" type="string" value="$(arg ws_path)"/>
+
+    <rosparam command="load" file="$(arg ws_path)/config/localization.yaml" />
+
+    <node name="map_server" pkg="map_server" type="map_server" args="$(arg ws_path)/config/maze.yaml" output="log">
+        <param name="frame_id" value="map"/>
+        <param name="image" value="$(arg ws_path)/data/map/costmap.png"/>
+    </node>
+    
+</launch>
+
+
+
+
+
+
+
+
+
