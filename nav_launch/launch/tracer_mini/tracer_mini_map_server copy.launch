@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<launch>
+
+    <arg name="ws_path" default="/home/sonic/perception_driver_ws/jili_ws" />
+
+    <param name="ws_path" type="string" value="$(arg ws_path)"/>
+
+    <rosparam command="load" file="$(arg ws_path)/config/localization.yaml" />
+
+    <node name="map_server" pkg="map_server" type="map_server" args="$(arg ws_path)/config/maze.yaml" output="log">
+        <param name="frame_id" value="map"/>
+        <param name="image" value="$(arg ws_path)/data/map/costmap.png"/>
+    </node>
+    
+</launch>
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- <?xml version="1.0"?>
+<launch>
+    <arg name="OUTPUT_METHOD" default="screen"/>
+    <arg name="RESPAWN" default="false"/>
+    <arg name="ROBOT_TYPE" default="zeromess_z1"/>
+    <arg name="world_name" default="3room1hall_1"/>
+
+    <!-- <arg name="map_yaml_path" default="$(find robot_setup)/runtime/maps/floor_5/map/map.yaml"/> -->
+    <!-- <arg name="global_map" default="$(find nav_launch)/map/real/jili/jili_meeting_room2.yaml"/> -->
+    <arg name="global_map" default="$(find nav_launch)/map/real/B803/map.yaml"/>
+    <node name="map_server_global" pkg="map_server" type="map_server" args="$(arg global_map)" respawn="$(arg RESPAWN)" output="$(arg OUTPUT_METHOD)">
+<!--         <remap from="map" to="global_virtual_wall"/> -->
+<!--         <remap from="static_map" to="global_virtual_wall"/> -->
+    </node>
+
+        <node name="map_server" pkg="map_server" type="map_server" args="$(arg ws_path)/config/maze.yaml" output="log">
+        <param name="frame_id" value="map"/>
+        <param name="image" value="$(arg ws_path)/data/map/costmap.png"/>
+    </node>
+</launch> -->
+
+
+
+

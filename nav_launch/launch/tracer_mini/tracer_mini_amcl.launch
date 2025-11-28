@@ -1,0 +1,12 @@
+<!--  copy from https://git.ustc.edu.cn/drl_navigation/lifelong_navigation/-/blob/main/localization/launch/amcl.launch
+-->
+
+<launch>
+  <arg name="world_name" default="3room1hall_1"/>
+  <include file="$(find nav_launch)/launch/tracer_mini/tracer_mini_map_server.launch">
+        <arg name="world_name" value="$(arg world_name)"/>
+  </include>
+
+   <!-- <node pkg="rviz" name="rviz" type="rviz" args="-d $(find nav_launch)/rviz/real.rviz" /> -->
+
+</launch>

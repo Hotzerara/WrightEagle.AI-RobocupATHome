@@ -1,0 +1,3 @@
+<launch>
+    <node pkg="laser_split" type="split.py" name="laser_split" output="screen"/>
+</launch>
