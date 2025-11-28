@@ -1,0 +1,4 @@
+<launch>
+    <node pkg="tf2_ros" type="static_transform_publisher" name="rslidar_baselink_broadcaster" args="0.14 0.14 1.05 0 0.5236 0 /base_link_fusion /livox_frame" />
+    <node pkg="odom_baselink_rslidar_tf" type="map_to_odom_node.py" name="map_odom_rslidar_tf" />
+</launch>

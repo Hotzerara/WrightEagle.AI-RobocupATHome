@@ -1,0 +1,21 @@
+<launch>
+
+    <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="camera_lidar_broadcaster" args="0.0211 0.1292 -0.0220 -1.5756843 0.0128783 -1.02226456  /livox_frame /camera_link  " />
+ -->
+
+    <node pkg="tf2_ros" type="static_transform_publisher" name="map_odom_broadcaster" args="0 0 0 0 0 0 /map /odom_fusion" />
+    <node pkg="tf2_ros" type="static_transform_publisher" name="rslidar_baselink_broadcaster" args="0.35 0 -0.8 0 -0.5236 0  /livox_frame   /base_link_fusion" />
+    <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="rslidar_baselink_broadcaster" args="0 0 0 0 0 0  /livox_frame   /base_link_fusion" /> -->
+
+    <node pkg="odom_baselink_rslidar_tf" type="tf_transform" name="odom_baselink_rslidar_tf"/>
+
+
+
+</launch> 
+
+    <!-- <node pkg="odom_baselink_rslidar_tf" type="tf_transform" name="odom_baselink_rslidar_tf"/> -->
+    <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="camera_lidar_broadcaster" args="0.0211 0.1292 -0.0220 -1.5624  0.02 -1.017  /livox_frame /camera_link  " /> -->
+    <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="camera_lidar_broadcaster" args="0.0211 0.1292 -0.0220 -1.580 1.017 0.02 /livox_frame /camera_link" /> -->
+     <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="rslidar_baselink_broadcaster" args="0.14 0.14 1.05 0 0.5236 0 /base_link_fusion /livox_frame" /> -->
+    <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="rslidar_baselink_broadcaster" args="0.14 0.14 1.05 1.57 0.5236 0 /base_link_fusion /livox_frame" /> -->
+    <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="rslidar_baselink_broadcaster" args="0.14 0.14 1.05 0 0.5236 0 /base_link_fusion /livox_frame" /> -->
