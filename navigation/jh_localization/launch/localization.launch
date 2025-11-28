@@ -1,0 +1,28 @@
+<launch>
+    <!-- <param name="/use_sim_time" value="true" /> -->
+    <param name="ws_path" type="string" value="$(arg ws_path)"/>
+    <param name="topic" type="string" value="$(arg topic)"/>
+    <param name="imu_topic" type="string" value="$(arg imu_topic)"/>
+    <param name="feature_size" type="double" value="0.05"/>
+    <param name="ds_ratio" type="double" value="0.5"/>
+
+    <node name="map_server" pkg="map_server" type="map_server" args="$(arg ws_path)/config/maze.yaml" output="log">
+        <param name="frame_id" value="map"/>
+        <param name="image" value="$(arg ws_path)/data/map/costmap.png"/>
+    </node>
+
+
+    <rosparam command="load" file="$(arg ws_path)/config/localization.yaml" />
+
+    <node pkg="jh_localization" type="localization" name="localization" output="screen" />
+    <arg name="rviz" default="true" />
+    <group if="$(arg rviz)">
+        <node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz" args="-d $(find sonic_localization)/rviz/localization.rviz" />
+    </group>
+
+    <node pkg="jh_mapping" type="pub_cloud_from_bag" name="pub_cloud_from_bag" output="log" >
+        <param name="/pointcloud_topic" type="string" value="$(arg topic)"/>
+        <param name="/rosbag_path" type="string" value="$(arg bag_file)"/> 
+        <param name="/rate_in" type="int" value="10"/> 
+    </node> 
+</launch>
